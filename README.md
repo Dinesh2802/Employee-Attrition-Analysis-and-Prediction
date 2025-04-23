@@ -1,3 +1,3 @@
 # Employee-Attrition-Analysis-and-Prediction
 DS_Employee Attrition Analysis and Prediction
-![Screenshot 2025-03-14 130339](https://github.com/user-attachments/assets/012714a4-cfba-4abb-9062-6b6799b23c36)
+![Screenshot 2025-04-23 124801](https://github.com/user-attachments/assets/f3849894-1d70-4525-a68f-96a554f2d351)
