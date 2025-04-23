@@ -1,76 +1,142 @@
-import streamlit as st
+import streamlit as st  
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import pandas as pd
 from streamlit_option_menu import option_menu
 import warnings
+import pickle
 
 # Filter warnings
 warnings.filterwarnings('ignore')
 
-# Setting up the page config
+# Page Configuration
 st.set_page_config(page_icon="🌐", page_title="Employee Attrition Analysis", layout="wide")
 
 st.title(''':orange[***Welcome to the Employee Attrition Analysis system!***]''')
 
-# Upload dataset through Streamlit (outside the page check)
-uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+# Upload dataset (CSV or Pickle)
+uploaded_file = st.file_uploader("Upload a CSV or Pickle file", type=["csv", "pkl"])
+
+df = None
+model = None
 
 if uploaded_file is not None:
-    # Load dataset
-    df = pd.read_csv(uploaded_file)
-else:
-    df = None  # If no file is uploaded, set df to None
+    if uploaded_file.name.endswith('.csv'):
+        df = pd.read_csv(uploaded_file)
+    elif uploaded_file.name.endswith('.pkl'):
+        loaded_obj = pd.read_pickle(uploaded_file)
+        if isinstance(loaded_obj, pd.DataFrame):
+            df = loaded_obj
+        else:
+            model = loaded_obj
 
 # Set background image
 page_bg_img = """
 <style>
 [data-testid="stAppViewContainer"]{
-background-image: url("https://getwallpapers.com/wallpaper/full/2/7/4/90076.jpg");
+background-image: url("");
 background-size: cover;
 }
-
 [data-testid="stHeader"]{
 background-color: rgba(0, 0, 0, 0);
 }   
-
 [data-testid="stSidebarContent"]{
 background-color: rgba(0, 0, 0, 0);
 background-size: cover;
 }
 </style>
 """
-# Display the background image
 st.markdown(page_bg_img, unsafe_allow_html=True)
 
-# Sidebar for page navigation
+# Sidebar Navigation
 with st.sidebar:
-    selected_page = option_menu('Employee Attrition Analysis and Prediction', 
-                                ['Home', 'Age vs Employee-Attrition', 'Age Distribution', 'Department vs Employee-Attrition', 'Attrition Analysis', ],
-                                icons=['house', 'bar-chart', 'person', 'briefcase', 'pie-chart'], 
-                                default_index=0,
-                                orientation='vertical',  
-                                styles={
-                                    "container": {"padding": "3px", "background-color": "#f0f0f5"},
-                                    "icon": {"color": "orange", "font-size": "20px"},
-                                    "nav-link": {"font-size": "16px", "text-align": "left", "margin": "3px", "--hover-color": "#f0f0f5"},
-                                    "nav-link-selected": {"background-color": "#ADD8E6"},
-                                }
-                                )
+    selected_page = option_menu(
+        'Employee Attrition Analysis and Prediction', 
+        ['Home', 'Predict Attrition', 'Age vs Employee-Attrition', 'Age Distribution', 'Department vs Employee-Attrition', 'Attrition Analysis'],
+        icons=['house', 'activity', 'bar-chart', 'person', 'briefcase', 'pie-chart'], 
+        default_index=0,
+        orientation='vertical',  
+        styles={
+            "container": {"padding": "3px", "background-color": "#f0f0f5"},
+            "icon": {"color": "orange", "font-size": "20px"},
+            "nav-link": {"font-size": "16px", "text-align": "left", "margin": "3px", "--hover-color": "#f0f0f5"},
+            "nav-link-selected": {"background-color": "#ADD8E6"},
+        }
+    )
 
 # Home Page
 if selected_page == 'Home':
-    if df is None:
-        st.write("Please upload a CSV file to proceed.")
+    if df is not None:
+        st.write("✅ DataFrame loaded successfully!")
+        st.write(df.head())
+    elif model is not None:
+        st.write("✅ Model loaded successfully and ready for prediction.")
     else:
-        st.write("CSV file uploaded successfully!")
+        st.write("Please upload a CSV file for analysis or a Pickle model for prediction.")
 
-# Age vs Employee-Attrition Chart
+
+# Prediction Page (Optional: Add it to your sidebar menu if not already)
+elif selected_page == "Predict Attrition":
+    if 'model' in locals() and model is not None:
+        st.header("Predict Employee Attrition")
+
+        st.markdown("### 📋 Enter Employee Details")
+
+        # Collect inputs
+        age = st.slider("Age", 18, 60, 30)
+        job_satisfaction = st.slider("Job Satisfaction (1-4)", 1, 4, 3)
+        years_at_company = st.slider("Years at Company", 0, 40, 5)
+        monthly_income = st.number_input("Monthly Income", min_value=1000, max_value=20000, value=5000)
+
+        overtime = st.selectbox("OverTime", ["Yes", "No"])
+        department = st.selectbox("Department", ["Sales", "Research & Development", "Human Resources"])
+        job_role = st.selectbox("Job Role", ["Sales Executive", "Research Scientist", "Laboratory Technician", 
+                                             "Manufacturing Director", "Healthcare Representative", 
+                                             "Manager", "Sales Representative", "Research Director", "Human Resources"])
+        marital_status = st.selectbox("Marital Status", ["Single", "Married", "Divorced"])
+        performance_rating = st.selectbox("Performance Rating", [1, 2, 3, 4])
+
+        # Build input DataFrame
+        input_dict = {
+            'Age': [age],
+            'JobSatisfaction': [job_satisfaction],
+            'YearsAtCompany': [years_at_company],
+            'MonthlyIncome': [monthly_income],
+            'OverTime': [1 if overtime == "Yes" else 0],
+            'Department': [department],
+            'JobRole': [job_role],
+            'MaritalStatus': [marital_status],
+            'PerformanceRating': [performance_rating],
+        }
+
+        input_df = pd.DataFrame(input_dict)
+
+        # One-hot encode categorical columns to match training
+        categorical_cols = ['Department', 'JobRole', 'MaritalStatus']
+        input_encoded = pd.get_dummies(input_df, columns=categorical_cols)
+
+        # Align with model features
+        model_features = model.feature_names_in_
+        for col in model_features:
+            if col not in input_encoded.columns:
+                input_encoded[col] = 0  # add missing columns
+        input_encoded = input_encoded[model_features]  # reorder columns
+
+        # Predict
+        prediction = model.predict(input_encoded)[0]
+        proba = model.predict_proba(input_encoded)[0][1]
+
+        st.subheader("📊 Prediction Result:")
+        st.write(f"**Attrition:** {'Yes' if prediction == 1 else 'No'}")
+        st.write(f"**Probability:** {proba:.2%}")
+    else:
+        st.warning("Please upload a Pickle model file to use the prediction feature.")
+
+# Age vs Employee-Attrition
 elif selected_page == 'Age vs Employee-Attrition':
     if df is not None:
         st.title("Age vs Employee-Attrition Analysis")
-        # Scatter plot of Age vs Employee-Attrition
         fig, ax = plt.subplots()
         ax.scatter(df['Age'], df['Attrition'], color='Slateblue', alpha=0.5)
         ax.set_xlabel('Age')
@@ -80,11 +146,10 @@ elif selected_page == 'Age vs Employee-Attrition':
     else:
         st.write("Please upload a CSV file to view this chart.")
 
-# Age Distribution Chart
+# Age Distribution
 elif selected_page == 'Age Distribution':
     if df is not None:
         st.title("Age Distribution Analysis")
-        # Histogram of Age
         fig, ax = plt.subplots(figsize=(8, 5))
         ax.hist(df['Age'], bins=15, color='skyblue', edgecolor='black')
         ax.set_xlabel('Age')
@@ -94,29 +159,28 @@ elif selected_page == 'Age Distribution':
     else:
         st.write("Please upload a CSV file to view this chart.")
 
-# Department vs Employee-Attrition (Attrition Analysis) Page
+# Department vs Employee-Attrition
 elif selected_page == 'Department vs Employee-Attrition':
     if df is not None:
         st.title("Department vs Employee-Attrition Analysis")
-        # Boxplot to show Department vs Salary by Attrition
         plt.figure(figsize=(10, 6))
-        sns.barplot(x='Department', y='Attrition', hue='RelationshipSatisfaction', data=df, palette='Set2')
+        sns.barplot(x='Department', y='Attrition', hue='PerformanceRating', data=df, palette='Set2')
         plt.title("Department vs Employee-Attrition")
         plt.xlabel("Department")
         plt.ylabel("Attrition")
         st.pyplot(plt)
-    else:   
+    else:
         st.write("Please upload a CSV file to view this chart.")
 
-# Attrition Analysis (Pie Chart)
+# Attrition Pie Chart
 elif selected_page == 'Attrition Analysis':
     if df is not None:
         st.title("Attrition Analysis")
-        # Pie chart for Attrition distribution
         attrition_counts = df['Attrition'].value_counts()
         fig, ax = plt.subplots(figsize=(6, 6))
-        ax.pie(attrition_counts, labels=['No Attrition', 'Attrition'], autopct='%1.1f%%', startangle=90, colors=['lightblue', 'salmon'])
+        ax.pie(attrition_counts, labels=attrition_counts.index, autopct='%1.1f%%', startangle=90, colors=['lightblue', 'salmon'])
         ax.set_title('Attrition Distribution')
         st.pyplot(fig)
     else:
         st.write("Please upload a CSV file to view this chart.")
+        
